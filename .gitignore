@@ -1,5 +1,17 @@
 # Prerequisites
 *.d
+*~
+_*
+*.o
+*.d
+*.asm
+*.sym
+*.img
+/mkfs/mkfs
+/kernel/kernel
+/user/usys.S
+.gdbinit
+TAGS
 
 # Object files
 *.o
@@ -53,3 +65,20 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# xv6-riscv
+# Ignorar extensiones y archivos temporales en cualquier parte dentro de xv6-riscv
+xv6-riscv/**/*~
+xv6-riscv/**/_*
+xv6-riscv/**/*.o
+xv6-riscv/**/*.d
+xv6-riscv/**/*.asm
+xv6-riscv/**/*.sym
+xv6-riscv/**/*.img
+
+# Ignorar binarios y archivos específicos con la ruta exacta
+xv6-riscv/mkfs/mkfs
+xv6-riscv/kernel/kernel
+xv6-riscv/user/usys.S
+xv6-riscv/.gdbinit
+xv6-riscv/TAGS

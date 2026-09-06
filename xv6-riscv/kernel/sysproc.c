@@ -127,3 +127,10 @@ sys_trace(void)
   myproc()->tracemask = mask;
   return 0;
 }
+
+// Devuelve al espacio de usuario el numero de bytes de memoria fisica libre.
+uint64
+sys_getfreemem(void)
+{
+  return count_free_bytes();
+}

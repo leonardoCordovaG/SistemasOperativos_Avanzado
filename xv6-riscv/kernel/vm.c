@@ -219,6 +219,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
   uint64 a;
+  uint64 origsz = oldsz;
 
   if (newsz < oldsz)
     return oldsz;
@@ -238,6 +239,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       return 0;
     }
   }
+
+  // Rastrear asignacion de memoria
+  if (newsz > origsz) {
+    printk("[HEAP TRACE] Expansion de Heap: %ld -> %ld bytes (+%ld paginas)\n",
+           origsz, newsz, (PGROUNDUP(newsz) - PGROUNDUP(origsz)) / PGSIZE);
+  }
+
   return newsz;
 }
 
@@ -254,6 +262,10 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
+
+    // Rastrear liberacion de memoria
+    printk("[HEAP TRACE] Reduccion de Heap: %ld -> %ld bytes (-%d paginas)\n",
+           oldsz, newsz, npages);
   }
 
   return newsz;

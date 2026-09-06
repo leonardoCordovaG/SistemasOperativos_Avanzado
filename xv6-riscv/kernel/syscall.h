@@ -24,3 +24,4 @@
 #define SYS_getreadcount 23
 #define SYS_trace 24
 #define SYS_getfreemem 25
+#define SYS_pgaccess 26

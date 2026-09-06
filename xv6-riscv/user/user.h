@@ -28,6 +28,7 @@ int sync(void);
 int getreadcount(void);
 int trace(int);
 uint64 getfreemem(void);
+int pgaccess(void *base, int len, void *mask);
 
 // ulib.c
 int stat(const char *, struct stat *);

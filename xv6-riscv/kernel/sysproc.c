@@ -134,3 +134,41 @@ sys_getfreemem(void)
 {
   return count_free_bytes();
 }
+
+// int pgaccess(void *base, int len, void *mask)
+// Inspecciona 'len' paginas desde 'base'. Por cada pagina con PTE_A activo,
+// marca el bit i de una mascara de 32 bits y limpia PTE_A. El resultado se
+// copia a la direccion de usuario 'mask' con copyout().
+uint64 sys_pgaccess(void)
+{
+  uint64 base;
+  int len;
+  uint64 maskaddr;
+
+  argaddr(0, &base);
+  argint(1, &len);
+  argaddr(2, &maskaddr);
+
+  if (len < 0 || len > 32)
+    return -1;
+
+  struct proc *p = myproc();
+  uint64 mask = 0;
+
+  for (int i = 0; i < len; i++) {
+    uint64 va = base + (uint64)i * PGSIZE;
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0)
+      return -1;
+    if (*pte & PTE_A) {
+      mask |= (1L << i);
+      *pte &= ~PTE_A; // limpiar para poder detectar accesos futuros
+    }
+  }
+
+  uint32 umask = (uint32)mask;
+  if (copyout(p->pagetable, p->sz, maskaddr, (char *)&umask, sizeof(umask)) < 0)
+    return -1;
+
+  return 0;
+}

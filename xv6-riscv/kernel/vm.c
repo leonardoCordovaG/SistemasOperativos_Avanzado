@@ -489,3 +489,28 @@ ismapped(pagetable_t pagetable, uint64 va)
   }
   return 0;
 }
+
+// Recorre los 3 niveles de la tabla con walk() y muestra por consola
+// la traduccion VA -> PA y los permisos (R/W/X/U) del PTE de 'va'.
+void
+inspect_pte(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+
+  pte = walk(pagetable, va, 0);
+  if (pte == 0) {
+    printk("VA %p: No existe mapeo en la tabla\n", (void *)va);
+    return;
+  }
+  if ((*pte & PTE_V) == 0) {
+    printk("VA %p: PTE invalido\n", (void *)va);
+    return;
+  }
+  printk("VA %p -> PA %p | Permisos: %c%c%c%c\n",
+         (void *)va,
+         (void *)PTE2PA(*pte),
+         (*pte & PTE_R) ? 'R' : '-',
+         (*pte & PTE_W) ? 'W' : '-',
+         (*pte & PTE_X) ? 'X' : '-',
+         (*pte & PTE_U) ? 'U' : '-');
+}

@@ -60,6 +60,7 @@ void            ireclaim(int);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+uint64          count_free_bytes(void);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -170,6 +171,7 @@ int             copyin(pagetable_t, uint64, char *, uint64, uint64);
 int             copyinstr(pagetable_t, uint64, char *, uint64, uint64);
 int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, uint64, int);
+void            inspect_pte(pagetable_t, uint64);
 
 // plic.c
 void            plicinit(void);

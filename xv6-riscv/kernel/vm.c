@@ -526,3 +526,31 @@ inspect_pte(pagetable_t pagetable, uint64 va)
          (*pte & PTE_X) ? 'X' : '-',
          (*pte & PTE_U) ? 'U' : '-');
 }
+
+// Recorre recursivamente una tabla de paginas imprimiendo cada PTE valido.
+// 'level' es la profundidad actual (1 = nivel superior) y controla la sangria.
+static void
+vmprint_rec(pagetable_t pagetable, int level)
+{
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) == 0)
+      continue;
+
+    for (int j = 0; j < level; j++)
+      printk(" ..");
+    printk("%d: pte %p pa %p\n", i, (void *)pte, (void *)PTE2PA(pte));
+
+    // Si no es hoja (sin R/W/X), apunta a una tabla del siguiente nivel.
+    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      vmprint_rec((pagetable_t)PTE2PA(pte), level + 1);
+  }
+}
+
+// Imprime de forma jerarquica la tabla de paginas y todas sus entradas validas.
+void
+vmprint(pagetable_t pagetable)
+{
+  printk("page table %p\n", (void *)pagetable);
+  vmprint_rec(pagetable, 1);
+}

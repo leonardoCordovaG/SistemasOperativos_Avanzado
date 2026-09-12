@@ -1,0 +1,26 @@
+Remote debugging using :1234
+0x0000000000001000 in ?? ()
+Breakpoint 1 at 0x80000008
+Breakpoint 2 at 0x80000018
+Breakpoint 3 at 0x80000014
+Continuing.
+
+Breakpoint 1, 0x0000000080000008 in _start ()
+Continuing.
+
+Breakpoint 2, 0x0000000080000018 in bad_handler ()
+$1 = 0x5
+$2 = 0x80000010
+$3 = 0x0
+Continuing.
+
+Breakpoint 3, 0x0000000080000014 in loop ()
+$4 = 0x80000014
+=> 0x80000014 <loop>:	j	0x80000014 <loop>
+   0x80000018 <bad_handler>:	csrr	t0,mcause
+Continuing.
+
+Breakpoint 3, 0x0000000080000014 in loop ()
+Continuing.
+
+Breakpoint 3, 0x0000000080000014 in loop ()

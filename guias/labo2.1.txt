@@ -1,0 +1,266 @@
+LABORATORIO 2.1: DEPURACIÓN DE KERNEL EN RISC-V CON QEMU Y GDB
+1. Fundamento Teórico y Herramientas
+Arquitectura de Depuración: QEMU + GDB
+QEMU integra un servidor de depuración (GDB stub) que permite interceptar la ejecución del procesador emulado en el puerto TCP 1234.
+-s: Abre el servidor de depuración GDB en el puerto TCP 1234.
+-S: Congela la CPU en la dirección de reset (0x80000000) a la espera de instrucciones desde GDB.
+-nographic: Deshabilita la pantalla gráfica y redirige la entrada/salida de la consola serie directamente a la terminal.
+¿Qué es gdb-multiarch y por qué es necesario?
+El binario estándar gdb en distribuciones Linux está compilado únicamente para depurar ejecutables nativos de la arquitectura host (x86_64).
+gdb-multiarch es una versión extendida del GNU Debugger compilada con soporte para múltiples arquitecturas objetivo (RISC-V, ARM, MIPS, etc.). Nos permite ejecutar la herramienta en nuestra computadora (x86_64) e inspeccionar la ejecución instrucción por instrucción de un kernel compilado para RISC-V (riscv64) dentro de QEMU.
+Instalación de Herramientas (Ubuntu / Debian / WSL2)
+Ejecuta el siguiente comando en la terminal:
+
+Bash
+sudo apt update
+sudo apt install -y gdb-multiarch qemu-system-misc gcc-riscv64-unknown-elf
+
+
+Verificación: Ejecuta gdb-multiarch --version y confirma que la salida indique soporte para múltiples arquitecturas.
+Registros CSRs en RISC-V (Machine Mode - M-Mode)
+Al ejecutar QEMU con la opción -bios none, el procesador arranca en Machine Mode (M-Mode). Las excepciones e interrupciones son capturadas a través de los Registros de Control y Estado (CSRs) de nivel M:
+Registro
+Nombre
+Descripción / Función en el Kernel
+x1
+ra
+Return Address: Dirección de retorno de función.
+x2
+sp
+Stack Pointer: Puntero a la pila del kernel.
+mtvec
+CSR
+Machine Trap Vector Base Address: Dirección base del manejador de excepciones.
+mcause
+CSR
+Machine Cause Register: Razón numérica del trap (Bit 63 = 1 Interrupción, 0 Excepción).
+mepc
+CSR
+Machine Exception Program Counter: Dirección de la instrucción que generó la excepción.
+mtval
+CSR
+Machine Trap Value Register: Información auxiliar del fallo (opcode o dirección de memoria).
+
+
+2. Preparación del Entorno y Ejemplo Demostrativo
+Paso 1: Creación del Directorio de Trabajo
+Crea la carpeta de la práctica y accede a ella:
+
+
+Bash
+mkdir -p ~/so_labs/sesion2_gdb
+cd ~/so_labs/sesion2_gdb
+
+
+Verificación: Ejecuta pwd y asegura que la ruta activa finalice en sesion2_gdb.
+Paso 2: Creación del Ejemplo Demostrativo (kernel_demo.s)
+Crea el archivo fuente:
+Bash
+nano kernel_demo.s
+
+
+Pega el siguiente código fuente:
+.section .text
+.global _start
+
+_start:
+    # 1. Registrar la direccion del manejador en mtvec
+    la t0, trap_vector
+    csrw mtvec, t0
+
+    # 2. Provocar excepcion: Instruccion no implementada / ilegal
+    unimp
+
+infinite_loop:
+    j infinite_loop
+
+.align 4
+trap_vector:
+    csrr t0, mcause
+    csrr t1, mepc
+    csrr t2, mtval
+1:  j 1b
+
+
+Objetivo del Código (kernel_demo.s): Demostrar la captura automática de una excepción mediante hardware en M-Mode. El programa registra la dirección de trap_vector en mtvec y ejecuta la instrucción unimp (unimplemented instruction).
+Resultado Esperado: Al llegar a unimp, la CPU interrumpe la ejecución normal y salta a trap_vector. El registro mcause contendrá el valor 0x2 (Illegal instruction), mepc almacenará 0x80000008 (dirección de unimp) y mtval almacenará 0x0.
+Paso 3: Compilación
+Compilar el binario en formato ELF:
+
+
+
+Bash
+riscv64-unknown-elf-gcc -nostdlib -fno-builtin -Ttext=0x80000000 -o kernel_demo.elf kernel_demo.s
+
+
+Verificación: Ejecuta ls -l kernel_demo.elf para confirmar que el ejecutable existe en el directorio.
+3. Flujo de Depuración Paso a Paso (Dos Terminales)
+Abre dos terminales situadas en la carpeta ~/so_labs/sesion2_gdb.
+Terminal 1: Iniciar QEMU
+Inicia la máquina emulada:
+
+Bash
+qemu-system-riscv64 -machine virt -bios none -kernel kernel_demo.elf -s -S -nographic
+
+
+Verificación: La terminal se pausará sin mostrar texto, indicando que QEMU está esperando conexiones en el puerto 1234.
+Terminal 2: Conectar e Inspeccionar con gdb-multiarch
+Inicia el depurador:
+
+Bash
+gdb-multiarch kernel_demo.elf
+
+
+Dentro del entorno interactivo de GDB:
+
+Fragmento de código
+# 1. Conectarse a la instancia de QEMU
+(gdb) target remote :1234
+
+# 2. Configurar breakpoints en el inicio y en el manejador de excepciones
+(gdb) b _start
+(gdb) b trap_vector
+
+# 3. Continuar ejecucion hasta _start
+(gdb) continue
+
+# 4. Desensamblar el codigo cargado en memoria
+(gdb) x/5i $pc
+
+# 5. Reanudar la ejecucion (la CPU fallara en 'unimp' y se detendra en trap_vector)
+(gdb) continue
+
+# 6. Inspeccionar los registros CSRs
+(gdb) p/x $mcause
+(gdb) p/x $mepc
+(gdb) p/x $mtval
+
+
+Verificación: El valor de $mcause mostrado tras el segundo continue debe ser exactamente 0x2.
+
+Instrucciones para Salir y Cerrar Sesión
+En modo -nographic, el atajo Ctrl + C no detiene la ejecución de QEMU. Para finalizar los procesos de forma limpia:
+En GDB (Terminal 2): Escribe quit (o q) y presiona Enter.
+En QEMU (Terminal 1): Presiona la combinación Ctrl + A, suelta las teclas y presiona X. La terminal mostrará QEMU: Terminated.
+4. Ejercicio Práctico Evaluado
+Paso 1: Código con Fallo de Diseño (kernel_bug.s)
+Crea el archivo del ejercicio:
+
+Bash
+nano kernel_bug.s
+
+
+Pega el siguiente código fuente:
+
+.section .text
+.global _start
+
+_start:
+    # 1. Configurar mtvec con el manejador
+    la t0, bad_handler
+    csrw mtvec, t0
+
+    # 2. Provocar excepcion: Acceso a direccion de memoria nula (0x0)
+    li t0, 0x0
+    ld t1, 0(t0)
+
+loop:
+    j loop
+
+bad_handler:
+    # Manejador con error: No actualiza mepc antes de retornar
+    csrr t0, mcause
+    mret
+
+
+Compilar el binario con fallos:
+
+
+
+Bash
+riscv64-unknown-elf-gcc -nostdlib -fno-builtin -Ttext=0x80000000 -o kernel_bug.elf kernel_bug.s
+
+
+Verificación: Comprueba con ls -l kernel_bug.elf que el ejecutable se creó correctamente.
+Paso 2: Objetivos y Resultados Esperados
+Objetivo del Código (kernel_bug.s): Simular una falla en un sistema operativo donde ocurre un acceso no válido a memoria (0x0) y el manejador (bad_handler) no gestiona el puntero de instrucción mepc antes de invocar la instrucción de retorno mret.
+Resultado Esperado - Fase 1 (Diagnóstico del Bug):
+Al ejecutar ld t1, 0(t0), la CPU genera una excepción de acceso a memoria (mcause = 0x5 / Load access fault).
+El procesador almacena la dirección de la instrucción ld en mepc y salta a bad_handler.
+Al finalizar bad_handler, la instrucción mret lee mepc y salta de regreso a la misma instrucción ld que volvió a fallar.
+Resultado: El sistema entra en un ciclo infinito entre la instrucción ld y bad_handler, congelando el kernel.
+Resultado Esperado - Fase 2 (Corrección en kernel_fixed.s):
+El estudiante debe modificar bad_handler para incrementar el valor de mepc en +4 bytes (saltando la instrucción defectuosa) o reorientar mepc a la etiqueta loop antes de ejecutar mret.
+Resultado: Al depurar en GDB, el procesador atiende la excepción una sola vez, ejecuta mret, avanza a la etiqueta loop y el sistema continúa funcionando sin congelarse.
+Paso 3: Generación del Registro de Depuración (script_gdb.txt)
+Sigue este procedimiento para grabar la traza de ejecución que irá dentro del informe final:
+
+1.Iniciar QEMU y GDB:Terminal 1 y 2.
+Lanza QEMU en la Terminal 1 con qemu-system-riscv64 -machine virt -bios none -kernel kernel_bug.elf -s -S -nographic e inicia GDB en la Terminal 2 con gdb-multiarch kernel_bug.elf.
+Verificación: La Terminal 2 debe quedar en la consola interactiva (gdb).
+2.Activar el registro en archivo:Terminal 2.
+Habilita la grabación automática ejecutando los siguientes comandos en GDB:
+
+gdb
+(gdb) set logging file script_gdb.txt
+(gdb) set logging overwrite on
+(gdb) set logging enabled on
+
+
+Verificación: GDB mostrará el mensaje Copying output to script_gdb.txt.
+3.Ejecutar el flujo de depuración:Terminal 2.
+Ejecuta las órdenes de inspección de los CSRs:
+gdb
+(gdb) target remote :1234
+(gdb) b _start
+(gdb) b bad_handler
+(gdb) continue
+(gdb) continue
+(gdb) p/x $mcause
+(gdb) p/x $mepc
+(gdb) p/x $mtval
+
+
+Verificación: Confirma que los comandos devuelvan los valores hexadecimales correspondientes en pantalla.
+4.Finalizar la grabación y cerrar:Terminal 2.
+Detén el log y cierra GDB:
+gdb
+(gdb) set logging enabled off
+(gdb) quit
+
+
+Verificación: Ejecuta cat script_gdb.txt en la terminal Linux y confirma que el texto capturado contenga toda la traza de comandos.
+Paso 4: Modalidad de Entrega Unificada en PDF
+Toda la práctica debe agruparse y entregarse en UN ÚNICO ARCHIVO PDF denominado Lab2_Depuracion_RISCV_NombreApellido.pdf.
+El documento debe seguir obligatoriamente la estructura presentada en la Plantilla del Anexo y constar de 3 partes estructuradas:
+Parte 1: Informe Técnico y Diagnóstico: Respuestas teóricas, análisis de la falla y los registros CSRs.
+Parte 2: Traza de Depuración (script_gdb.txt): Copia exacta en texto monospaciado de la sesión grabada con GDB.
+Parte 3: Código Fuente Corregido (kernel_fixed.s): Código ensamblador funcional y documentado.
+5. Rúbrica de Calificación
+Criterio
+Excelente (100%)
+Satisfactorio (75%)
+En Proceso (50%)
+Inadecuado (0%)
+Configuración y Cierre (10%)
+Instala las herramientas, estructura carpetas y gestiona el cierre de QEMU (Ctrl+A, X) y GDB de forma limpia.
+Configura el entorno pero requiere asistencia para cerrar las sesiones sin dejar procesos en segundo plano.
+Genera procesos huérfanos de QEMU por no cerrar las terminales con las secuencias correctas.
+No logra instalar las herramientas ni configurar el entorno.
+Depuración y Log (25%)
+Registra correctamente la traza de comandos en el informe con $mcause, $mepc y $mtval validados.
+Muestra la traza de depuración pero omite la inspección de alguno de los registros CSRs clave.
+Muestra imágenes o capturas ilegibles de la consola en lugar del texto grabado por GDB.
+No incluye la traza de depuración en el documento PDF.
+Diagnóstico del Bug (35%)
+Identifica los valores de los CSRs e indica con precisión teórica la razón del bucle generado por la instrucción mret.
+Reporta los valores de los CSRs pero la explicación sobre el ciclo de retorno de mret es incompleta.
+Muestra registros generales pero no relaciona el valor de mepc con la reejecución del error.
+No incluye la sección de diagnóstico técnico.
+Solución Unificada en PDF (30%)
+Entrega un único archivo PDF respetando la plantilla del anexo, con el código kernel_fixed.s totalmente corregido.
+Entrega un único PDF pero omite el formato de la plantilla o el código corregido carece de comentarios explicativos.
+Modifica el código pero este mantiene el fallo, o entrega múltiples archivos en lugar de agrupar todo en un único PDF.
+No entrega la solución corregida.
+
+

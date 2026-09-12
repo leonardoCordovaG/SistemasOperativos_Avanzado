@@ -68,10 +68,27 @@ usertrap(void)
     syscall();
   } else if ((which_dev = devintr()) != 0) {
     // ok
-  } else if ((r_scause() == 15 || r_scause() == 13) &&
-             vmfault(p->pagetable, p->sz, r_stval(),
-                     (r_scause() == 13) ? 1 : 0) != 0) {
-    // page fault on lazily-allocated page
+  } else if (r_scause() == 15 || r_scause() == 13) {
+    // 13: Load Page Fault, 15: Store Page Fault
+    uint64 va = r_stval(); // Obtener la direccion virtual que fallo
+
+    // CORRECCIÓN:
+    // Se valida que 'va' este dentro del heap del proceso y por encima del guard bajo el stack de usuario
+    // De lo contrario no es una direccion legitima para crecimiento lazy: se mata el proceso.
+    if (va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) {
+      setkilled(p);
+    } else {
+      char *mem = kalloc();
+      if (mem == 0) {
+        setkilled(p);
+      } else {
+        memset(mem, 0, PGSIZE);
+        uint64 a = PGROUNDDOWN(va);
+
+        // Se agregan PTE_U (acceso en modo usuario) y PTE_V (entrada valida) a la mascara de permisos.
+        mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_W | PTE_U | PTE_V);
+      }
+    }
   } else {
     printk("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printk("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
